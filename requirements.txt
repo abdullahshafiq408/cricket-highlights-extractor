@@ -1,0 +1,30 @@
+# ── Web app ──────────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Video processing ─────────────────────────────────────────────────────────
+opencv-python>=4.9.0          # frame extraction, image processing
+moviepy==1.0.3                 # clip cutting and video stitching
+
+# ── Audio processing ─────────────────────────────────────────────────────────
+openai-whisper>=20231117       # speech-to-text transcription
+librosa>=0.10.1                # audio analysis (RMS energy / crowd spikes)
+soundfile>=0.12.1              # audio file I/O
+
+# ── OCR (score overlay) ───────────────────────────────────────────────────────
+easyocr>=1.7.1                 # reads scoreboard text from video frames
+
+# ── NLP (commentary classification) ──────────────────────────────────────────
+transformers>=4.40.0           # Hugging Face models (DistilBERT zero-shot)
+torch>=2.2.0                   # PyTorch backend
+sentence-transformers>=2.7.0   # semantic similarity (optional upgrade path)
+
+# ── Computer vision (frame classifier) ───────────────────────────────────────
+ultralytics>=8.2.0             # YOLOv8 — object / event detection in frames
+
+# ── Data & utilities ─────────────────────────────────────────────────────────
+numpy>=1.26.0
+pandas>=2.2.0
+requests>=2.31.0               # fetching Cricsheet data by URL
+pyyaml>=6.0.1                  # Cricsheet also ships YAML — useful fallback
+tqdm>=4.66.0                   # progress bars
+pillow>=10.3.0                 # image handling
