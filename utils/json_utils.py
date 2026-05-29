@@ -45,11 +45,6 @@ import requests
 from pathlib import Path
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EVENT TYPE CONSTANTS
-# These are the labels we'll attach to each delivery
-# ─────────────────────────────────────────────────────────────────────────────
-
 EVENT_BOUNDARY_4 = "boundary_4"
 EVENT_BOUNDARY_6 = "boundary_6"
 EVENT_WICKET = "wicket"
@@ -57,9 +52,6 @@ EVENT_DOT_BALL = "dot_ball"
 EVENT_NORMAL = "normal"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. LOAD CRICSHEET JSON
-# ─────────────────────────────────────────────────────────────────────────────
 
 def load_cricsheet_json(filepath: str) -> dict:
     """
@@ -84,14 +76,6 @@ def load_cricsheet_json(filepath: str) -> dict:
     return data
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. FLATTEN TO DELIVERIES
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. FLATTEN TO DELIVERIES
-# ─────────────────────────────────────────────────────────────────────────────
-
 def flatten_deliveries(cricsheet_data: dict) -> list[dict]:
     """
     Flatten the nested Cricsheet structure into a flat list of deliveries.
@@ -105,9 +89,6 @@ def flatten_deliveries(cricsheet_data: dict) -> list[dict]:
 
         for over_data in innings.get("overs", []):
             over_num = over_data.get("over", 0)
-            
-            # 🏏 NEW: Track actual legal balls, not array indices!
-            legal_ball_count = 0
 
             for delivery in over_data.get("deliveries", []):
                 
@@ -116,15 +97,12 @@ def flatten_deliveries(cricsheet_data: dict) -> list[dict]:
                 is_wide = "wides" in extras
                 is_noball = "noballs" in extras
 
-                # 🚫 RULE 1: If it is a wide, completely ignore it.
                 if is_wide:
                     continue
-                
-                # 🏏 RULE 2: If it is a legal delivery, increment the ball counter.
+
                 if not is_noball:
                     legal_ball_count += 1
-                
-                # Assign the ball number (ensure it is at least 1, and never exceeds 6)
+
                 ball_num = max(1, legal_ball_count)
                 if ball_num > 6:
                     ball_num = 6
@@ -137,7 +115,7 @@ def flatten_deliveries(cricsheet_data: dict) -> list[dict]:
                 wicket_kind = wickets[0].get("kind", None) if is_wicket else None
                 player_out = wickets[0].get("player_out", None) if is_wicket else None
 
-                # Classify the event type
+   
                 event_type = _classify_event(runs_batter, is_wicket)
 
                 deliveries.append({
@@ -172,11 +150,6 @@ def _classify_event(runs_batter: int, is_wicket: bool) -> str:
     return EVENT_NORMAL
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. EXTRACT HIGHLIGHT-WORTHY EVENTS
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Priority scores for each event type (used by the fusion layer)
 EVENT_PRIORITY = {
     EVENT_WICKET:     1.0,    # most exciting
     EVENT_BOUNDARY_6: 0.9,
@@ -212,11 +185,6 @@ def extract_events(
         f"[json_utils] Found {len(events)} highlight events in Cricsheet data")
     return events
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. ESPN CRICINFO URL → CRICSHEET DATA (best-effort)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def fetch_by_espn_url(espn_url: str, save_to: str | None = None) -> dict | None:
     """
     Try to extract a match ID from an ESPN Cricinfo URL and fetch the
@@ -232,7 +200,6 @@ def fetch_by_espn_url(espn_url: str, save_to: str | None = None) -> dict | None:
 
     Returns the parsed JSON dict, or None if not found.
     """
-    # Extract numeric match ID from the URL
     match = re.search(r"[-/](\d{6,8})(?:[/?#]|$)", espn_url)
     if not match:
         print(f"[json_utils] Could not extract match ID from URL: {espn_url}")
@@ -241,7 +208,6 @@ def fetch_by_espn_url(espn_url: str, save_to: str | None = None) -> dict | None:
     espn_match_id = match.group(1)
     print(f"[json_utils] Extracted ESPN match ID: {espn_match_id}")
 
-    # Try Cricsheet's search API
     search_url = f"https://cricsheet.org/api/matches/search/?espn_id={espn_match_id}"
     try:
         resp = requests.get(search_url, timeout=10)
@@ -256,7 +222,6 @@ def fetch_by_espn_url(espn_url: str, save_to: str | None = None) -> dict | None:
             f"[json_utils] No Cricsheet match found for ESPN ID {espn_match_id}")
         return None
 
-    # Download the first result
     cricsheet_id = results[0].get("id")
     download_url = f"https://cricsheet.org/api/matches/{cricsheet_id}/json"
 
