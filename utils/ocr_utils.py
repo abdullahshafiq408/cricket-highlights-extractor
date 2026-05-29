@@ -19,7 +19,6 @@ import cv2
 import easyocr
 from tqdm import tqdm
 
-# Safe Streamlit import so the script works in both Colab and VSCode natively
 try:
     import streamlit as st
     HAS_STREAMLIT = True
@@ -43,10 +42,6 @@ def _get_reader() -> easyocr.Reader:
         _reader = easyocr.Reader(["en"], gpu=True, verbose=False)
     return _reader
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. CROP THE HUD REGION
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def crop_hud(frame: np.ndarray, bottom_fraction: float = 0.15, right_crop: float = 0.5) -> np.ndarray:
     """SPEED OPTIMIZED: Lighter 1.5x magnification + Otsu's smart thresholding."""
@@ -62,20 +57,11 @@ def crop_hud(frame: np.ndarray, bottom_fraction: float = 0.15, right_crop: float
         enlarged, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. EXTRACT TEXT
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def read_frame_text(processed_frame: np.ndarray) -> str:
     reader = _get_reader()
     results = reader.readtext(processed_frame, detail=0, paragraph=True)
     return " ".join(results)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. PARSE OVER.BALL FROM TEXT
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def parse_over_ball(text: str) -> tuple[int, int] | None:
     cleaned = text.replace("I", "1").replace(
@@ -113,17 +99,12 @@ def parse_over_ball(text: str) -> tuple[int, int] | None:
 
     return None
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. BUILD THE TEMPORAL ALIGNMENT MAP (DUAL INNINGS TRACKER)
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def build_alignment_map(frames: list[dict]) -> dict[str, float]:
     print(f"[ocr_utils] Scanning {len(frames)} frames for scoreboard text...")
 
     raw_detections = []
 
-    # 1. Read all frames chronologically
     for frame_info in tqdm(frames, desc="OCR Scanning"):
         img = cv2.imread(frame_info["frame_path"])
         if img is None:
@@ -142,7 +123,6 @@ def build_alignment_map(frames: list[dict]) -> dict[str, float]:
                 "ball": ball
             })
 
-    # 2. ── BULLETPROOF DUAL-INNINGS SANITIZER ──
     clean_map = {}
     current_innings = 1
     highest_over = -1.0
@@ -152,7 +132,6 @@ def build_alignment_map(frames: list[dict]) -> dict[str, float]:
         val = det["over_val"]
         ts = det["timestamp"]
 
-        # --- B. INNINGS SWAP LOCK (PROGRESSION DETECTOR) ---
         if current_innings == 1 and highest_over > 4.0 and val <= 0.5:
             unique_future_lows = set()
             for future_det in raw_detections[i+1: i+21]:
@@ -171,18 +150,15 @@ def build_alignment_map(frames: list[dict]) -> dict[str, float]:
         key = f"{current_innings}_{det['over']}.{det['ball']}"
         last_seen_key = key + "_last"  # HIDDEN METADATA FOR TRAILING EDGE
 
-        # --- A. INITIALIZATION LOCK ---
         if highest_over == -1.0:
             if val <= 5.0:
                 if key not in clean_map:
                     clean_map[key] = ts
-                # Constantly update the trailing edge
                 clean_map[last_seen_key] = ts
                 highest_over = val
                 last_valid_ts = ts
             continue
 
-        # --- C. TIME-AWARE RATCHET (BASE-6 PHYSICS LOCK) ---
         if highest_over != -1.0:
             delta_overs = val - highest_over
             delta_time = ts - last_valid_ts
@@ -206,23 +182,18 @@ def build_alignment_map(frames: list[dict]) -> dict[str, float]:
 
             if key not in clean_map:
                 clean_map[key] = ts
-            # Constantly update the trailing edge
-            clean_map[last_seen_key] = ts
 
             highest_over = val
             last_valid_ts = ts
 
-    # Filter out our hidden metadata keys for the console printout to keep it clean
     actual_anchors = [k for k in clean_map.keys() if not k.endswith("_last")]
     print(f"\n[ocr_utils] RAW DETECTIONS: {len(raw_detections)}")
     print(
         f"[ocr_utils] CLEANED ANCHORS ({len(actual_anchors)}): {actual_anchors}\n")
 
-    # --- CROSS-PLATFORM TELEMETRY EXPORT ---
     import os
     import json
 
-    # Smart Pathing: Cloud vs Local
     out_dir = '/content/drive/MyDrive' if os.path.exists(
         '/content/drive/MyDrive') else 'assets'
     os.makedirs(out_dir, exist_ok=True)
@@ -237,11 +208,6 @@ def build_alignment_map(frames: list[dict]) -> dict[str, float]:
 
     return clean_map
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. HELPER: resolve a Cricsheet event to a video timestamp
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 def resolve_timestamp(
     innings: int,
     over: int,
@@ -254,9 +220,6 @@ def resolve_timestamp(
     """
     key = f"{innings}_{over}.{ball}"
 
-    # --- THE CRICSHEET TO TV GRAPHIC TRANSLATION ---
-    # If Cricsheet asks for the 6th ball (e.g., 4.6), translate it to the
-    # TV graphic for the end of the over (e.g., 5.0) which you already have.
     if ball == 6:
         tv_key = f"{innings}_{over+1}.0"
         if tv_key in alignment_map:
@@ -264,24 +227,20 @@ def resolve_timestamp(
                 f"[ocr_utils] 🔗 Direct Map: Translated Cricsheet {over}.6 -> OCR {over+1}.0")
             return alignment_map[tv_key]
 
-    # 1. If we have the exact ball, just return its normal starting timestamp
     if key in alignment_map:
         return alignment_map[key]
 
-    # 2. Determine exact predecessors to look for.
     predecessors = []
 
     if ball > 1 and ball < 6:
-        # For 14.3, look for the trailing edge of 14.2
+
         predecessors.append(f"{innings}_{over}.{ball-1}")
     elif ball == 1:
-        # For 15.1, the TV likely showed 15.0 or 14.5 right before it
         predecessors.append(f"{innings}_{over}.0")
         predecessors.append(f"{innings}_{over-1}.5")
     elif ball == 0:
         predecessors.append(f"{innings}_{over-1}.5")
 
-    # 3. Look for the Trailing Edge of the previous ball
     for prev_key in predecessors:
         last_seen_key = prev_key + "_last"
         if last_seen_key in alignment_map:
@@ -290,13 +249,8 @@ def resolve_timestamp(
             print(
                 f"[ocr_utils] 🎯 Strict Interpolation: {key} anchored to the end of {prev_key}")
             return estimated_start
-
-    # 4. If the immediate predecessor is missing, abort.
     print(f"[ocr_utils] 🚫 Dropping {key} - Immediate anchor missing.")
     return None
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. HELPER: Filter events to Match Video Duration
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def filter_valid_events(events: list[dict], alignment_map: dict[str, float]) -> list[dict]:
@@ -312,7 +266,6 @@ def filter_valid_events(events: list[dict], alignment_map: dict[str, float]) -> 
     for e in events:
         event_innings = e.get("innings", 1)
 
-        # If resolve_timestamp can find it (or strictly interpolate it), keep it!
         ts = resolve_timestamp(
             event_innings, e['over'], e['ball'], alignment_map)
 
