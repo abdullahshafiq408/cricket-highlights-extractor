@@ -23,15 +23,13 @@ import gc
 import os
 import json
 import numpy as np
-import librosa          # audio analysis library
-import whisper          # OpenAI speech-to-text
-import soundfile as sf  # reading audio files
+import librosa          
+import whisper          
+import soundfile as sf  
 print("Whisper version:", whisper.__version__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. AUDIO EXTRACTION (video → WAV)
-# ─────────────────────────────────────────────────────────────────────────────
 
+#audio extraction
 def extract_audio(video_path: str, output_wav: str) -> str:
     """
     Extract the audio track from a video file and save it as a WAV.
@@ -55,10 +53,8 @@ def extract_audio(video_path: str, output_wav: str) -> str:
     print(f"[audio_utils] Audio extracted → {output_wav}")
     return output_wav
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. WHISPER TRANSCRIPTION
-# ─────────────────────────────────────────────────────────────────────────────
 
+#transcribing audio
 def transcribe_audio(wav_path: str, model_size: str = "base") -> list[dict]:
     """
     Transcribe speech in a WAV file using OpenAI Whisper.
@@ -95,10 +91,8 @@ def transcribe_audio(wav_path: str, model_size: str = "base") -> list[dict]:
     gc.collect()     # This forces Python to instantly empty the RAM
     return segments
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. AUDIO SPIKE / EXCITEMENT DETECTION
-# ─────────────────────────────────────────────────────────────────────────────
 
+#audio energy
 def detect_audio_spikes(
     wav_path:         str,
     window_sec:       float = 1.0,
@@ -137,22 +131,17 @@ def detect_audio_spikes(
     """
     print(f"[audio_utils] Analysing audio energy in {wav_path} ...")
 
-    # Load audio — librosa returns a float32 numpy array + sample rate
     y, sr = librosa.load(wav_path, sr=None, mono=True)
 
-    # Convert window length from seconds to samples
     hop_length    = int(window_sec * sr)
     frame_length  = hop_length * 2         # overlap for smoother results
 
-    # Compute RMS energy per frame
     rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
 
-    # Convert frame indices back to timestamps
     times = librosa.frames_to_time(
         np.arange(len(rms)), sr=sr, hop_length=hop_length
     )
 
-    # Normalise RMS to 0-1 range (excitement score)
     rms_min, rms_max = rms.min(), rms.max()
     if rms_max - rms_min < 1e-8:
         # Prevent divide-by-zero if audio is nearly silent
@@ -160,7 +149,6 @@ def detect_audio_spikes(
     else:
         norm_rms = (rms - rms_min) / (rms_max - rms_min)
 
-    # Threshold: anything above this percentile is a "spike"
     threshold = np.percentile(norm_rms, top_n_percentile)
 
     results = []
@@ -176,14 +164,10 @@ def detect_audio_spikes(
     print(f"[audio_utils] Found {spike_count} audio spikes "
           f"(threshold={threshold:.2f}, percentile={top_n_percentile})")
 
-    # --- CROSS-PLATFORM TELEMETRY EXPORT ---
-    # Smart Pathing: Cloud vs Local
     out_dir = '/content/drive/MyDrive' if os.path.exists('/content/drive/MyDrive') else 'assets'
     os.makedirs(out_dir, exist_ok=True)
     
     try:
-        # We use [::10] to downsample the data so the JSON file doesn't become massive!
-        # Using norm_rms as energy so the visual graph peaks cleanly at 1.0
         audio_data = [{"time": float(t), "energy": float(e)} for t, e in zip(times, norm_rms)][::10]
         
         with open(os.path.join(out_dir, 'audio_telemetry.json'), 'w') as f:
@@ -194,9 +178,6 @@ def detect_audio_spikes(
 
     return results
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. HELPER: get excitement score at a specific timestamp
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_excitement_at(
     spikes:        list[dict],
