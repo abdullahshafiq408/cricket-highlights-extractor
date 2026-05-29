@@ -12,17 +12,11 @@ and MoviePy for clip cutting / stitching (high-level, easy API).
 
 import os
 import cv2
-# OpenCV — reads video frames
 from moviepy.editor import (
     VideoFileClip,
     concatenate_videoclips,
 )
-from tqdm import tqdm               # shows a progress bar in the terminal
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. FRAME EXTRACTION
-# ─────────────────────────────────────────────────────────────────────────────
+from tqdm import tqdm              
 
 def extract_frames(video_path: str, output_dir: str, fps: int = 2) -> list[dict]:
     """
@@ -50,13 +44,10 @@ def extract_frames(video_path: str, output_dir: str, fps: int = 2) -> list[dict]
     if not cap.isOpened():
         raise ValueError(f"Could not open video: {video_path}")
 
-    # original video FPS (e.g. 25 or 30)
     video_fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     duration_sec = total_frames / video_fps
 
-    # How many original frames to skip between each save
-    # e.g. if video is 25 fps and we want 2 fps → save every 12th frame
     frame_interval = max(1, int(video_fps / fps))
 
     saved = []
@@ -67,7 +58,7 @@ def extract_frames(video_path: str, output_dir: str, fps: int = 2) -> list[dict]
 
     with tqdm(total=int(duration_sec * fps), desc="Extracting frames") as pbar:
         while True:
-            ret, frame = cap.read()         # ret=False when video ends
+            ret, frame = cap.read()        
             if not ret:
                 break
 
@@ -76,7 +67,7 @@ def extract_frames(video_path: str, output_dir: str, fps: int = 2) -> list[dict]
                 filename = f"frame_{frame_idx:07d}.jpg"
                 filepath = os.path.join(output_dir, filename)
 
-                cv2.imwrite(filepath, frame)    # save JPEG to disk
+                cv2.imwrite(filepath, frame)  
 
                 saved.append({
                     "frame_path":    filepath,
@@ -91,11 +82,6 @@ def extract_frames(video_path: str, output_dir: str, fps: int = 2) -> list[dict]
     print(f"[video_utils] Saved {len(saved)} frames to {output_dir}")
     return saved
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. CLIP CUTTING
-# ─────────────────────────────────────────────────────────────────────────────
-
 def cut_clip(video_path: str, start_time: float, end_time: float, out_path: str) -> str | None:
     import subprocess
     import imageio_ffmpeg  # MoviePy automatically installed this on your PC!
@@ -108,10 +94,9 @@ def cut_clip(video_path: str, start_time: float, end_time: float, out_path: str)
         end = float(end_time)
         duration = end - start
         
-        # 1. Get the raw FFMPEG engine executable
+     
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        
-        # 2. 🚀 THE BYPASS: Talk directly to the engine, skip MoviePy completely
+
         cmd = [
             ffmpeg_exe,
             "-y",                   # Overwrite if file already exists
@@ -123,18 +108,13 @@ def cut_clip(video_path: str, start_time: float, end_time: float, out_path: str)
             "-preset", "fast",      # Process it quickly
             out_path
         ]
-        
-        # 3. Execute the command silently
+
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         return out_path
     except Exception as e:
         print(f"[video_utils] ⚠ Failed to FFMPEG cut clip {out_path}: {e}")
         return None
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. CLIP STITCHING
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def stitch_clips(clip_paths: list[str], out_path: str) -> bool:
@@ -146,8 +126,7 @@ def stitch_clips(clip_paths: list[str], out_path: str) -> bool:
         return False
         
     try:
-        # 1. Create a temporary text file listing all the clips
-        # FFMPEG requires a specific text file format to know what to glue together.
+
         list_file_path = os.path.join(os.path.dirname(out_path), "concat_list.txt")
         
         with open(list_file_path, "w", encoding="utf-8") as f:
@@ -155,11 +134,9 @@ def stitch_clips(clip_paths: list[str], out_path: str) -> bool:
                 # FFMPEG prefers forward slashes for paths, even on Windows
                 safe_path = os.path.abspath(c).replace("\\", "/")
                 f.write(f"file '{safe_path}'\n")
-                
-        # 2. Get the raw FFMPEG engine executable
+   
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        
-        # 3. 🚀 THE BYPASS: Stitch instantly without re-encoding
+
         cmd = [
             ffmpeg_exe,
             "-y",                   # Overwrite if file already exists
@@ -169,11 +146,9 @@ def stitch_clips(clip_paths: list[str], out_path: str) -> bool:
             "-c", "copy",           # STREAM COPY: Do not re-encode! (Lightning fast)
             out_path
         ]
-        
-        # 4. Execute the command silently
+
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # 5. Clean up the temporary text file
+
         if os.path.exists(list_file_path):
             os.remove(list_file_path)
             
