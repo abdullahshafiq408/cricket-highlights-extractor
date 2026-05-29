@@ -31,11 +31,6 @@ import cv2
 from ultralytics import YOLO
 from tqdm import tqdm
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# YOLO MODEL LOADER
-# ─────────────────────────────────────────────────────────────────────────────
-
 _model = None
 
 def _get_model(model_name: str = "yolov8n.pt") -> YOLO:
@@ -54,12 +49,6 @@ def _get_model(model_name: str = "yolov8n.pt") -> YOLO:
         _model = YOLO(model_name)   # auto-downloads on first run
     return _model
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SCORE A SINGLE FRAME
-# ─────────────────────────────────────────────────────────────────────────────
-
-# COCO class IDs we care about
 PERSON_CLASS_ID      = 0
 SPORTS_BALL_CLASS_ID = 32
 
@@ -97,7 +86,6 @@ def score_frame(frame_path: str) -> dict:
 
     results = model(img, verbose=False)[0]  # [0] because we pass one image
 
-    # Parse detections
     persons   = []
     has_ball  = False
     all_boxes = results.boxes
@@ -112,16 +100,10 @@ def score_frame(frame_path: str) -> dict:
         elif cls_id == SPORTS_BALL_CLASS_ID and confidence > 0.3:
             has_ball = True
 
-    # ── Heuristic scoring ────────────────────────────────────────────────────
-
-    # 1. More visible people → more action (capped, normalised to 0–1)
     person_score = min(len(persons) / 12.0, 1.0)
 
-    # 2. Ball detected → likely delivery or hit in progress
     ball_score = 0.4 if has_ball else 0.0
 
-    # 3. Spatial clustering of persons
-    #    If people are bunched into a small area → celebration / run-out chase
     clustering_score = 0.0
     if len(persons) >= 3:
         centres_x = [(b["box"][0] + b["box"][2]) / 2 for b in persons]
@@ -131,7 +113,6 @@ def score_frame(frame_path: str) -> dict:
         # Low spread = clustered = exciting; high spread = spread out = boring
         clustering_score = max(0.0, 1.0 - (spread_x + spread_y) / 500.0)
 
-    # Weighted combination
     visual_score = (
         0.40 * person_score +
         0.35 * ball_score +
@@ -146,10 +127,6 @@ def score_frame(frame_path: str) -> dict:
         "visual_score":  round(visual_score, 4),
     }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SCORE ALL FRAMES
-# ─────────────────────────────────────────────────────────────────────────────
 
 def score_all_frames(frames: list[dict]) -> list[dict]:
     """
@@ -183,11 +160,6 @@ def score_all_frames(frames: list[dict]) -> list[dict]:
     avg_score = np.mean([r["visual_score"] for r in results])
     print(f"[frame_classifier] Average visual score: {avg_score:.3f}")
     return results
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER: get visual score at a timestamp
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_visual_score_at(
     scored_frames: list[dict],
