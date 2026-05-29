@@ -19,21 +19,12 @@ from utils.audio_utils import get_excitement_at
 from utils.ocr_utils import resolve_timestamp
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DEFAULT WEIGHTS — EXPERIMENTAL LOGIC
-# ─────────────────────────────────────────────────────────────────────────────
-
 DEFAULT_WEIGHTS = {
     "base_priority": 0.60,  # 60% - Guarantees the Cricsheet event makes the cut
     "audio_score":   0.40,  # 40% - Uses crowd roar to rank the best moments
     "nlp_score":     0.00,  # Disabled for this test
     "visual_score":  0.00,  # Disabled for this test
 }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SCORE ALL EVENTS
-# ─────────────────────────────────────────────────────────────────────────────
 
 def score_events(
     events:              list[dict],     # from json_utils.extract_events()
@@ -53,37 +44,28 @@ def score_events(
     if weights is None:
         weights = DEFAULT_WEIGHTS
 
-    # Normalise weights to sum to 1.0 (safety check)
     total_w = sum(weights.values())
     w = {k: v / total_w for k, v in weights.items()}
 
     scored = []
 
-    # --- CROSS-PLATFORM SMART PATHING ---
-    # Automatically detect if we are running in the cloud (Colab) or locally (VSCode)
     frame_dir = '/content/frames' if os.path.exists(
         '/content/frames') else 'frames'
 
     for event in events:
-        # Extract innings, default to 1 if it's missing for some reason
         innings = event.get("innings", 1)
         over = event["over"]
         ball = event["ball"]
         base_prio = event.get("base_priority", 0.5)
 
-        # ── Step 1: resolve video timestamp ──────────────────────────────────
-        # UPDATED: Now passing 'innings' to handle the dual-innings map
         timestamp = resolve_timestamp(innings, over, ball, alignment_map)
         if timestamp is None:
-            # No alignment data — skip this event
             continue
 
-        # ── Step 2: pull scores from each signal at this timestamp ───────────
         nlp_score = get_ml_score_at(classified_segments, timestamp)
         audio_score = get_excitement_at(audio_spikes,       timestamp)
         visual_score = get_visual_score_at(scored_frames,    timestamp)
 
-        # ── Step 3: weighted fusion ───────────────────────────────────────────
         final_score = (
             w["base_priority"] * base_prio +
             w["nlp_score"] * nlp_score +
@@ -91,7 +73,6 @@ def score_events(
             w["visual_score"] * visual_score
         )
 
-        # ── Step 4: clip window ───────────────────────────────────────────────
         pre_buffer = _get_pre_buffer(event["event_type"])
         post_buffer = _get_post_buffer(event["event_type"])
 
@@ -104,22 +85,15 @@ def score_events(
             "final_score":   round(final_score,  4),
             "clip_start":    max(0, timestamp - pre_buffer),
             "clip_end":      timestamp + post_buffer,
-            # Added Telemetry Path
             "debug_ocr_frame": os.path.join(frame_dir, f"frame_{int(timestamp)}.jpg")
         })
 
-    # Sort by final_score descending
     scored.sort(key=lambda x: x["final_score"], reverse=True)
 
     print(f"[fusion] Scored {len(scored)} events. "
           f"Top score: {scored[0]['final_score']:.3f}" if scored else
           "[fusion] No events scored.")
     return scored
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FILTER BY THRESHOLD
-# ─────────────────────────────────────────────────────────────────────────────
 
 def filter_highlights(
     scored_events:  list[dict],
@@ -131,24 +105,18 @@ def filter_highlights(
     If max_clips is None, it dynamically keeps ALL events that pass the threshold!
     Returns events in CHRONOLOGICAL ORDER.
     """
-    # 1. Filter out the boring stuff
+
     filtered = [e for e in scored_events if e["final_score"] >= threshold]
 
-    # 2. Only cap the list if a hard limit was explicitly asked for
     if max_clips is not None:
         filtered = filtered[:max_clips]
 
-    # 3. Re-sort chronologically for the final reel
     filtered.sort(key=lambda x: x["timestamp_sec"])
 
     print(f"[fusion] {len(filtered)} events passed threshold {threshold} "
           f"(from {len(scored_events)} total)")
     return filtered
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CLIP BUFFER HELPERS (SCOREBOARD LAG ADJUSTED)
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _get_pre_buffer(event_type: str) -> float:
     """
@@ -176,10 +144,6 @@ def _get_post_buffer(event_type: str) -> float:
     }
     return buffers.get(event_type, 2.0)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SCORING SUMMARY (for the Streamlit UI)
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_score_breakdown(event: dict) -> dict:
     """
